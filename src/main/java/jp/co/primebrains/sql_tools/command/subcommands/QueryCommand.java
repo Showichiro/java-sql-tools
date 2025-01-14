@@ -133,7 +133,7 @@ public class QueryCommand implements Callable<Integer> {
 
         try (Connection conn = jdbcTemplate.getDataSource().getConnection();
                 var stmt = conn.createStatement();
-                ResultSet rs = stmt.executeQuery(sql)) {
+                ResultSet rs = stmt.executeQuery(sql.replace(";", ""))) {
 
             ResultSetMetaData metaData = rs.getMetaData();
             int columnCount = metaData.getColumnCount();

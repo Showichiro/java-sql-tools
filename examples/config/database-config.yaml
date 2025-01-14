@@ -3,3 +3,7 @@ databases:
     url: jdbc:h2:mem:testdb;
     username: sa
     password: password
+  oracle:
+    url: jdbc:oracle:thin:@localhost:1521/XEPDB1
+    username: PROTO
+    password: pass12345

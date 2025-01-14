@@ -2,4 +2,9 @@
 SELECT * FROM EMPLOYEES;
 
 -- Second query
-SELECT * FROM EMPLOYEES WHERE age > 30;
+SELECT
+  *
+FROM
+  EMPLOYEES
+WHERE
+  age > 30;
