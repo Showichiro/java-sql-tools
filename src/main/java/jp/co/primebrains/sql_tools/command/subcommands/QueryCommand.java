@@ -3,9 +3,6 @@ package jp.co.primebrains.sql_tools.command.subcommands;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -23,6 +20,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.DataSourceBuilder;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -58,6 +56,9 @@ public class QueryCommand implements Callable<Integer> {
     @Option(names = { "-f", "--format" }, description = "Output format (csv/excel/yaml)", defaultValue = "csv")
     private OutputFormat format;
 
+    @Option(names = { "-p", "--params" }, description = "Query parameters in key=value format (e.g. -p age=30 -p name=John)", split = ",")
+    private Map<String, String> params = new LinkedHashMap<>();
+
     private enum OutputFormat {
         csv, excel, yaml
     }
@@ -71,7 +72,7 @@ public class QueryCommand implements Callable<Integer> {
     @Autowired
     private SQLFileService sqlFileService;
 
-    private JdbcTemplate jdbcTemplate;
+    private NamedParameterJdbcTemplate jdbcTemplate;
 
     @Override
     public Integer call() throws Exception {
@@ -120,7 +121,7 @@ public class QueryCommand implements Callable<Integer> {
                 .password(dbProps.getPassword())
                 .build();
 
-        this.jdbcTemplate = new JdbcTemplate(dataSource);
+        this.jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
     }
 
     /**
@@ -198,28 +199,26 @@ public class QueryCommand implements Callable<Integer> {
      */
     private List<List<String>> executeQuery(String sql) throws Exception {
         List<List<String>> results = new ArrayList<>();
+        
+        // Convert params Map<String, String> to Map<String, Object>
+        Map<String, Object> paramMap = new LinkedHashMap<>(params);
 
-        try (Connection conn = jdbcTemplate.getDataSource().getConnection();
-                var stmt = conn.createStatement();
-                ResultSet rs = stmt.executeQuery(sql.replace(";", ""))) {
-
-            ResultSetMetaData metaData = rs.getMetaData();
-            int columnCount = metaData.getColumnCount();
-
-            // Add headers
-            List<String> headers = new ArrayList<>();
-            for (int i = 1; i <= columnCount; i++) {
-                headers.add(metaData.getColumnName(i));
-            }
+        // Execute query using NamedParameterJdbcTemplate
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.replace(";", ""), paramMap);
+        
+        if (!rows.isEmpty()) {
+            // Add headers from first row's keys
+            List<String> headers = new ArrayList<>(rows.get(0).keySet());
             results.add(headers);
-
+            
             // Add data rows
-            while (rs.next()) {
-                List<String> row = new ArrayList<>();
-                for (int i = 1; i <= columnCount; i++) {
-                    row.add(rs.getString(i));
+            for (Map<String, Object> row : rows) {
+                List<String> values = new ArrayList<>();
+                for (String header : headers) {
+                    Object value = row.get(header);
+                    values.add(value != null ? value.toString() : "");
                 }
-                results.add(row);
+                results.add(values);
             }
         }
 
