@@ -100,6 +100,14 @@ public class QueryCommand implements Callable<Integer> {
         }
     }
 
+    /**
+     * Sets up a database connection using the specified database configuration.
+     *
+     * This method retrieves database properties for the given database key, creates a DataSource,
+     * and initializes a JdbcTemplate for executing database queries.
+     *
+     * @throws IllegalArgumentException if no database configuration is found for the specified database key
+     */
     private void setupDatabaseConnection() {
         DatabaseConfig.DatabaseProperties dbProps = databaseConfig.getDatabases().get(databaseKey);
         if (dbProps == null) {
@@ -116,27 +124,21 @@ public class QueryCommand implements Callable<Integer> {
     }
 
     /**
-     * Processes a SQL file by executing its SQL statements and exporting the
-     * results.
+     * Processes a SQL file by executing its SQL statements and exporting the results.
      *
-     * This method reads a SQL file, parses its SQL statements, and for each
-     * statement:
-     * - Generates a unique output filename based on the SQL file name, current
-     * timestamp, and statement index
-     * - Executes the SQL query
-     * - Exports the query results to either CSV or Excel format based on the
-     * specified output format
+     * This method performs the following steps for each SQL statement in the provided file:
+     * 1. Parse SQL statements from the input file
+     * 2. Generate a unique output filename using the base SQL filename, current timestamp, and statement index
+     * 3. Execute the SQL query and retrieve results
+     * 4. Export the query results to the specified output format (CSV, Excel, or YAML)
      *
-     * @param sqlFile The SQL file to be processed
-     * @throws Exception If there are errors during SQL file parsing, query
-     *                   execution, or result export
+     * @param sqlFile The SQL file containing SQL statements to be processed
+     * @throws Exception If any errors occur during SQL file parsing, query execution, or result export
+     *                   including file access issues, database connection problems, or export failures
      *
      * @see SQLFileService#parseSqlFile(String)
-     * @see #getFileExtension(OutputFormat)
      * @see #executeQuery(String)
-     * @see #exportToCsv(List, File)
-     * @see #exportToExcel(List, File)
-     * @see #exportToYaml(List, File)
+     * @see OutputFormat
      */
     private void processSqlFile(File sqlFile) throws Exception {
         List<String> sqlStatements = sqlFileService.parseSqlFile(sqlFile.getPath());
@@ -155,19 +157,23 @@ public class QueryCommand implements Callable<Integer> {
             switch (format) {
                 case csv:
                     exportToCsv(results, outputFile);
-                    break;
                 case excel:
                     exportToExcel(results, outputFile);
-                    break;
                 case yaml:
                     exportToYaml(results, outputFile);
-                    break;
                 default:
                     break;
             }
         }
     }
 
+    /**
+     * Determines the appropriate file extension for a given output format.
+     *
+     * @param format The output format for which to retrieve the file extension
+     * @return The corresponding file extension as a string
+     * @throws IllegalArgumentException If an unsupported output format is provided
+     */
     private String getFileExtension(OutputFormat format) {
         return switch (format) {
             case csv -> "csv";
@@ -177,6 +183,17 @@ public class QueryCommand implements Callable<Integer> {
         };
     }
 
+    /**
+     * Executes a given SQL query and retrieves the results as a list of lists.
+     *
+     * @param sql The SQL query to execute, with trailing semicolons removed
+     * @return A list of lists representing query results, where the first list contains column headers
+     *         and subsequent lists contain data rows
+     * @throws Exception If there is an error during database connection, query execution, or result retrieval
+     *
+     * @implNote This method uses a try-with-resources block to ensure proper resource management
+     *           and automatically closes database connections and statements
+     */
     private List<List<String>> executeQuery(String sql) throws Exception {
         List<List<String>> results = new ArrayList<>();
 
@@ -215,6 +232,17 @@ public class QueryCommand implements Callable<Integer> {
         }
     }
 
+    /**
+     * Exports query results to an Excel file using Apache POI.
+     *
+     * @param results A list of lists representing rows and columns of query results
+     * @param outputFile The target Excel file to write the results
+     * @throws Exception If there are issues creating or writing to the Excel file
+     *
+     * @implNote This method creates an Excel workbook with a single sheet named "Query Results"
+     * and populates it with the provided data. Each list in the results represents a row,
+     * and each element in the row list represents a cell value.
+     */
     private void exportToExcel(List<List<String>> results, File outputFile) throws Exception {
         try (Workbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("Query Results");
@@ -235,6 +263,19 @@ public class QueryCommand implements Callable<Integer> {
         }
     }
 
+    /**
+     * Exports query results to a YAML file with structured metadata.
+     *
+     * @param results A list of lists representing query results, where the first row contains column headers
+     * @param outputFile The target file to write the YAML export
+     * @throws Exception If an error occurs during YAML file generation
+     *
+     * @implNote This method converts query results into a structured YAML format with:
+     * - Total number of rows
+     * - Column names
+     * - Data rows as key-value mappings
+     * - Generation timestamp
+     */
     private void exportToYaml(List<List<String>> results, File outputFile) throws Exception {
         if (results.isEmpty()) {
             return;
