@@ -73,6 +73,18 @@ public class QueryCommand implements Callable<Integer> {
 
     private NamedParameterJdbcTemplate jdbcTemplate;
 
+    /**
+     * Executes the query command workflow, processing SQL files and exporting results.
+     *
+     * This method performs the following key steps:
+     * 1. Loads database configuration from the specified configuration file
+     * 2. Creates the output directory if it does not exist
+     * 3. Sets up a database connection using the loaded configuration
+     * 4. Processes each provided SQL file, executing queries and exporting results
+     *
+     * @return 0 if all SQL files are processed successfully, 1 if an error occurs
+     * @throws Exception if there are issues with configuration loading, database connection, or file processing
+     */
     @Override
     public Integer call() throws Exception {
         try {
@@ -103,10 +115,13 @@ public class QueryCommand implements Callable<Integer> {
     /**
      * Sets up a database connection using the specified database configuration.
      *
-     * This method retrieves database properties for the given database key, creates a DataSource,
-     * and initializes a JdbcTemplate for executing database queries.
+     * Retrieves database properties for the given database key from the configuration, creates a DataSource
+     * with the specified connection details, and initializes a NamedParameterJdbcTemplate for executing
+     * parameterized database queries.
      *
      * @throws IllegalArgumentException if no database configuration is found for the specified database key
+     * @see DatabaseConfig
+     * @see NamedParameterJdbcTemplate
      */
     private void setupDatabaseConnection() {
         DatabaseConfig.DatabaseProperties dbProps = databaseConfig.getDatabases().get(databaseKey);
@@ -186,15 +201,16 @@ public class QueryCommand implements Callable<Integer> {
     }
 
     /**
-     * Executes a given SQL query and retrieves the results as a list of lists.
+     * Executes a SQL query and retrieves results as a list of lists, supporting both parameterized and non-parameterized queries.
      *
-     * @param sql The SQL query to execute, with trailing semicolons removed
+     * @param sql The SQL query to execute, with optional named parameters
      * @return A list of lists representing query results, where the first list contains column headers
-     *         and subsequent lists contain data rows
+     *         and subsequent lists contain data rows. Returns an empty list if no results are found.
      * @throws Exception If there is an error during database connection, query execution, or result retrieval
      *
-     * @implNote This method uses a try-with-resources block to ensure proper resource management
-     *           and automatically closes database connections and statements
+     * @implNote This method handles two query execution scenarios:
+     *           1. Non-parameterized queries when no parameters are provided
+     *           2. Parameterized queries using named parameters from the {@code params} map
      */
     private List<List<String>> executeQuery(String sql) throws Exception {
         List<List<String>> results = new ArrayList<>();
