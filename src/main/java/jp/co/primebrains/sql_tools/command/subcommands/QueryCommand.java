@@ -110,6 +110,22 @@ public class QueryCommand implements Callable<Integer> {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
     }
 
+    /**
+     * Processes a SQL file by executing its SQL statements and exporting the results.
+     *
+     * This method reads a SQL file, parses its SQL statements, and for each statement:
+     * - Generates a unique output filename based on the SQL file name, current timestamp, and statement index
+     * - Executes the SQL query
+     * - Exports the query results to either CSV or Excel format based on the specified output format
+     *
+     * @param sqlFile The SQL file to be processed
+     * @throws Exception If there are errors during SQL file parsing, query execution, or result export
+     *
+     * @see SQLFileService#parseSqlFile(String)
+     * @see #executeQuery(String)
+     * @see #exportToCsv(List, File)
+     * @see #exportToExcel(List, File)
+     */
     private void processSqlFile(File sqlFile) throws Exception {
         List<String> sqlStatements = sqlFileService.parseSqlFile(sqlFile.getPath());
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
