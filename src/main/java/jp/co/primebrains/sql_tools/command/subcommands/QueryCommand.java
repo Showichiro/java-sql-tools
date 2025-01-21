@@ -51,7 +51,11 @@ public class QueryCommand implements Callable<Integer> {
     private File outputDir;
 
     @Option(names = { "-f", "--format" }, description = "Output format (csv/excel)", defaultValue = "csv")
-    private String format;
+    private OutputFormat format;
+
+    private enum OutputFormat {
+        csv, excel
+    }
 
     @Parameters(arity = "1..*", description = "SQL file paths")
     private List<File> sqlFiles;
@@ -115,14 +119,14 @@ public class QueryCommand implements Callable<Integer> {
             String sql = sqlStatements.get(i);
             String outputFileName = String.format("%s_%s_%d.%s",
                     baseFileName, timestamp, i + 1,
-                    format.toLowerCase().equals("excel") ? "xlsx" : "csv");
+                    format == OutputFormat.excel ? "xlsx" : "csv");
             File outputFile = new File(outputDir, outputFileName);
 
             List<List<String>> results = executeQuery(sql);
 
-            if ("csv".equalsIgnoreCase(format)) {
+            if (format == OutputFormat.csv) {
                 exportToCsv(results, outputFile);
-            } else if ("excel".equalsIgnoreCase(format)) {
+            } else if (format == OutputFormat.excel) {
                 exportToExcel(results, outputFile);
             }
         }
