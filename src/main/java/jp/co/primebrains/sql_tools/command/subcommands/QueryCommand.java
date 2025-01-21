@@ -157,8 +157,10 @@ public class QueryCommand implements Callable<Integer> {
             switch (format) {
                 case csv:
                     exportToCsv(results, outputFile);
+                    break;
                 case excel:
                     exportToExcel(results, outputFile);
+                    break;
                 case yaml:
                     exportToYaml(results, outputFile);
                 default:
