@@ -9,7 +9,9 @@ import java.sql.ResultSetMetaData;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 
 import javax.sql.DataSource;
@@ -24,6 +26,9 @@ import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.opencsv.CSVWriter;
 
 import jp.co.primebrains.sql_tools.config.DatabaseConfig;
@@ -50,11 +55,11 @@ public class QueryCommand implements Callable<Integer> {
     @Option(names = { "-o", "--output-dir" }, description = "Output directory", defaultValue = "./output")
     private File outputDir;
 
-    @Option(names = { "-f", "--format" }, description = "Output format (csv/excel)", defaultValue = "csv")
+    @Option(names = { "-f", "--format" }, description = "Output format (csv/excel/yaml)", defaultValue = "csv")
     private OutputFormat format;
 
     private enum OutputFormat {
-        csv, excel
+        csv, excel, yaml
     }
 
     @Parameters(arity = "1..*", description = "SQL file paths")
@@ -111,20 +116,27 @@ public class QueryCommand implements Callable<Integer> {
     }
 
     /**
-     * Processes a SQL file by executing its SQL statements and exporting the results.
+     * Processes a SQL file by executing its SQL statements and exporting the
+     * results.
      *
-     * This method reads a SQL file, parses its SQL statements, and for each statement:
-     * - Generates a unique output filename based on the SQL file name, current timestamp, and statement index
+     * This method reads a SQL file, parses its SQL statements, and for each
+     * statement:
+     * - Generates a unique output filename based on the SQL file name, current
+     * timestamp, and statement index
      * - Executes the SQL query
-     * - Exports the query results to either CSV or Excel format based on the specified output format
+     * - Exports the query results to either CSV or Excel format based on the
+     * specified output format
      *
      * @param sqlFile The SQL file to be processed
-     * @throws Exception If there are errors during SQL file parsing, query execution, or result export
+     * @throws Exception If there are errors during SQL file parsing, query
+     *                   execution, or result export
      *
      * @see SQLFileService#parseSqlFile(String)
+     * @see #getFileExtension(OutputFormat)
      * @see #executeQuery(String)
      * @see #exportToCsv(List, File)
      * @see #exportToExcel(List, File)
+     * @see #exportToYaml(List, File)
      */
     private void processSqlFile(File sqlFile) throws Exception {
         List<String> sqlStatements = sqlFileService.parseSqlFile(sqlFile.getPath());
@@ -135,17 +147,31 @@ public class QueryCommand implements Callable<Integer> {
             String sql = sqlStatements.get(i);
             String outputFileName = String.format("%s_%s_%d.%s",
                     baseFileName, timestamp, i + 1,
-                    format == OutputFormat.excel ? "xlsx" : "csv");
+                    getFileExtension(format));
             File outputFile = new File(outputDir, outputFileName);
 
             List<List<String>> results = executeQuery(sql);
 
-            if (format == OutputFormat.csv) {
-                exportToCsv(results, outputFile);
-            } else if (format == OutputFormat.excel) {
-                exportToExcel(results, outputFile);
+            switch (format) {
+                case csv:
+                    exportToCsv(results, outputFile);
+                case excel:
+                    exportToExcel(results, outputFile);
+                case yaml:
+                    exportToYaml(results, outputFile);
+                default:
+                    break;
             }
         }
+    }
+
+    private String getFileExtension(OutputFormat format) {
+        return switch (format) {
+            case csv -> "csv";
+            case excel -> "xlsx";
+            case yaml -> "yaml";
+            default -> throw new IllegalArgumentException("Unsupported format: " + format);
+        };
     }
 
     private List<List<String>> executeQuery(String sql) throws Exception {
@@ -204,5 +230,43 @@ public class QueryCommand implements Callable<Integer> {
                 workbook.write(fileOut);
             }
         }
+    }
+
+    private void exportToYaml(List<List<String>> results, File outputFile) throws Exception {
+        if (results.isEmpty()) {
+            return;
+        }
+
+        ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
+        yamlMapper.enable(SerializationFeature.INDENT_OUTPUT);
+
+        // ヘッダー行を取得
+        List<String> headers = results.get(0);
+
+        // データ行をMap形式に変換
+        List<Map<String, String>> dataRows = new ArrayList<>();
+        for (int i = 1; i < results.size(); i++) {
+            List<String> row = results.get(i);
+            Map<String, String> rowMap = new LinkedHashMap<>();
+
+            for (int j = 0; j < headers.size() && j < row.size(); j++) {
+                rowMap.put(headers.get(j), row.get(j));
+            }
+
+            dataRows.add(rowMap);
+        }
+
+        // 結果をYAMLとして出力
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("query_result", new LinkedHashMap<String, Object>() {
+            {
+                put("total_rows", dataRows.size());
+                put("columns", headers);
+                put("rows", dataRows);
+                put("generated_at", LocalDateTime.now().toString());
+            }
+        });
+
+        yamlMapper.writeValue(outputFile, output);
     }
 }
