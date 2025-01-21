@@ -3,9 +3,6 @@ package jp.co.primebrains.sql_tools.command.subcommands;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -23,7 +20,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.DataSourceBuilder;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -58,6 +55,9 @@ public class QueryCommand implements Callable<Integer> {
     @Option(names = { "-f", "--format" }, description = "Output format (csv/excel/yaml)", defaultValue = "csv")
     private OutputFormat format;
 
+    @Option(names = { "-p", "--params" }, description = "Query parameters in key=value format (e.g. -p age=30 -p name=John)", split = ",")
+    private Map<String, String> params = new LinkedHashMap<>();
+
     private enum OutputFormat {
         csv, excel, yaml
     }
@@ -71,8 +71,20 @@ public class QueryCommand implements Callable<Integer> {
     @Autowired
     private SQLFileService sqlFileService;
 
-    private JdbcTemplate jdbcTemplate;
+    private NamedParameterJdbcTemplate jdbcTemplate;
 
+    /**
+     * Executes the query command workflow, processing SQL files and exporting results.
+     *
+     * This method performs the following key steps:
+     * 1. Loads database configuration from the specified configuration file
+     * 2. Creates the output directory if it does not exist
+     * 3. Sets up a database connection using the loaded configuration
+     * 4. Processes each provided SQL file, executing queries and exporting results
+     *
+     * @return 0 if all SQL files are processed successfully, 1 if an error occurs
+     * @throws Exception if there are issues with configuration loading, database connection, or file processing
+     */
     @Override
     public Integer call() throws Exception {
         try {
@@ -103,10 +115,13 @@ public class QueryCommand implements Callable<Integer> {
     /**
      * Sets up a database connection using the specified database configuration.
      *
-     * This method retrieves database properties for the given database key, creates a DataSource,
-     * and initializes a JdbcTemplate for executing database queries.
+     * Retrieves database properties for the given database key from the configuration, creates a DataSource
+     * with the specified connection details, and initializes a NamedParameterJdbcTemplate for executing
+     * parameterized database queries.
      *
      * @throws IllegalArgumentException if no database configuration is found for the specified database key
+     * @see DatabaseConfig
+     * @see NamedParameterJdbcTemplate
      */
     private void setupDatabaseConnection() {
         DatabaseConfig.DatabaseProperties dbProps = databaseConfig.getDatabases().get(databaseKey);
@@ -120,7 +135,7 @@ public class QueryCommand implements Callable<Integer> {
                 .password(dbProps.getPassword())
                 .build();
 
-        this.jdbcTemplate = new JdbcTemplate(dataSource);
+        this.jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
     }
 
     /**
@@ -186,40 +201,45 @@ public class QueryCommand implements Callable<Integer> {
     }
 
     /**
-     * Executes a given SQL query and retrieves the results as a list of lists.
+     * Executes a SQL query and retrieves results as a list of lists, supporting both parameterized and non-parameterized queries.
      *
-     * @param sql The SQL query to execute, with trailing semicolons removed
+     * @param sql The SQL query to execute, with optional named parameters
      * @return A list of lists representing query results, where the first list contains column headers
-     *         and subsequent lists contain data rows
+     *         and subsequent lists contain data rows. Returns an empty list if no results are found.
      * @throws Exception If there is an error during database connection, query execution, or result retrieval
      *
-     * @implNote This method uses a try-with-resources block to ensure proper resource management
-     *           and automatically closes database connections and statements
+     * @implNote This method handles two query execution scenarios:
+     *           1. Non-parameterized queries when no parameters are provided
+     *           2. Parameterized queries using named parameters from the {@code params} map
      */
     private List<List<String>> executeQuery(String sql) throws Exception {
         List<List<String>> results = new ArrayList<>();
-
-        try (Connection conn = jdbcTemplate.getDataSource().getConnection();
-                var stmt = conn.createStatement();
-                ResultSet rs = stmt.executeQuery(sql.replace(";", ""))) {
-
-            ResultSetMetaData metaData = rs.getMetaData();
-            int columnCount = metaData.getColumnCount();
-
-            // Add headers
-            List<String> headers = new ArrayList<>();
-            for (int i = 1; i <= columnCount; i++) {
-                headers.add(metaData.getColumnName(i));
-            }
+        String cleanSql = sql.replace(";", "");
+        
+        List<Map<String, Object>> rows;
+        if (params.isEmpty()) {
+            // Execute non-parameterized query
+            rows = jdbcTemplate.getJdbcOperations().queryForList(cleanSql);
+        } else {
+            // Convert params Map<String, String> to Map<String, Object>
+            Map<String, Object> paramMap = new LinkedHashMap<>(params);
+            // Execute parameterized query
+            rows = jdbcTemplate.queryForList(cleanSql, paramMap);
+        }
+        
+        if (!rows.isEmpty()) {
+            // Add headers from first row's keys
+            List<String> headers = new ArrayList<>(rows.get(0).keySet());
             results.add(headers);
-
+            
             // Add data rows
-            while (rs.next()) {
-                List<String> row = new ArrayList<>();
-                for (int i = 1; i <= columnCount; i++) {
-                    row.add(rs.getString(i));
+            for (Map<String, Object> row : rows) {
+                List<String> values = new ArrayList<>();
+                for (String header : headers) {
+                    Object value = row.get(header);
+                    values.add(value != null ? value.toString() : "");
                 }
-                results.add(row);
+                results.add(values);
             }
         }
 
