@@ -198,12 +198,18 @@ public class QueryCommand implements Callable<Integer> {
      */
     private List<List<String>> executeQuery(String sql) throws Exception {
         List<List<String>> results = new ArrayList<>();
+        String cleanSql = sql.replace(";", "");
         
-        // Convert params Map<String, String> to Map<String, Object>
-        Map<String, Object> paramMap = new LinkedHashMap<>(params);
-
-        // Execute query using NamedParameterJdbcTemplate
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.replace(";", ""), paramMap);
+        List<Map<String, Object>> rows;
+        if (params.isEmpty()) {
+            // Execute non-parameterized query
+            rows = jdbcTemplate.getJdbcOperations().queryForList(cleanSql);
+        } else {
+            // Convert params Map<String, String> to Map<String, Object>
+            Map<String, Object> paramMap = new LinkedHashMap<>(params);
+            // Execute parameterized query
+            rows = jdbcTemplate.queryForList(cleanSql, paramMap);
+        }
         
         if (!rows.isEmpty()) {
             // Add headers from first row's keys
